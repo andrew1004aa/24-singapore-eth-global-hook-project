@@ -267,4 +267,32 @@ contract GachaHook is BaseHook, ERC20, VRFConsumerBaseV2Plus {
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return this.onERC721Received.selector;
     }
+
+
+    function prepareSendCrossChain(uint256 _amountToSend)
+        public
+        returns (Client.EVMTokenAmount[] memory tokensToSendDetails, uint256 amountToSend)
+    {
+        ERC20(address(this)).approve(address(router), _amountToSend);
+
+        tokensToSendDetails = new Client.EVMTokenAmount[](1);
+        Client.EVMTokenAmount memory tokenToSendDetails =
+            Client.EVMTokenAmount({ token: address(this), amount: _amountToSend });
+        tokensToSendDetails[0] = tokenToSendDetails;
+        amountToSend = _amountToSend;
+    }
+
+    function sendCrosschain(uint256 amountToSend, uint64 destinationChainSelector, address receiver) public payable {
+        // solhint-disable-next-line max-line-length
+        (Client.EVMTokenAmount[] memory tokensToSendDetails, uint256 amountToSend) = prepareSendCrossChain(amountToSend);
+        Client.EVM2AnyMessage memory message = Client.EVM2AnyMessage({
+            receiver: abi.encode(receiver),
+            data: abi.encode(""),
+            tokenAmounts: tokensToSendDetails,
+            extraArgs: Client._argsToBytes(Client.EVMExtraArgsV1({ gasLimit: 0 })),
+            feeToken: address(0)
+        });
+        uint256 fees = router.getFee(destinationChainSelector, message);
+        router.ccipSend{ value: fees }(destinationChainSelector, message);
+    }
 }
